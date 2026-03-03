@@ -1,0 +1,13 @@
+fastapi==0.103.2
+uvicorn==0.23.2
+pydantic==1.10.13
+
+tensorflow==2.13.1
+opencv-python
+# "face-recognition" (and its dlib dependency) was removed to avoid
+# lengthy builds on Windows; we rely on DeepFace instead for embeddings.
+deepface==0.0.99
+numpy
+python-dotenv
+firebase-admin
+twilio

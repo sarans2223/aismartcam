@@ -1,0 +1,16 @@
+# Firebase credentials - NEVER commit this
+serviceAccountKey.json
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Model files
+models/
+*.pt
+
+# OS files
+.DS_Store
+Thumbs.db
