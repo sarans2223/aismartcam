@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from call_alert import call_police, call_family
 import cv2
 import numpy as np
 import os
@@ -68,3 +69,21 @@ async def register_face(name: str, file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, f)
     reload_known_faces()
     return {"message": f"Face registered for {name}"}
+
+
+@app.post("/call-police")
+def trigger_police():
+    try:
+        sid = call_police()
+        return {"status": "Police called", "sid": sid}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/call-family")
+def trigger_family():
+    try:
+        result = call_family()
+        return {"status": result}
+    except Exception as e:
+        return {"error": str(e)}

@@ -83,6 +83,8 @@ const SettingsPage = React.memo(({ registeredFaces, onRegister }) => {
     }
   };
 
+ 
+
   return (
     <div style={{ padding: '30px', overflowY: 'auto', height: '100%' }}>
       <h2 style={{ color: '#e6edf3', marginBottom: '5px' }}>⚙️ Settings</h2>
@@ -188,7 +190,7 @@ export default function Dashboard({ onDetectionResult }) {
   useEffect(() => {
     alarmRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
     alarmRef.current.loop = true;
-  }, []);
+  }, []); 
 
   const handleDetectionResult = useCallback((data) => {
     if (!data || data.label === 'error') return;
@@ -203,21 +205,30 @@ export default function Dashboard({ onDetectionResult }) {
       onDetectionResult(entry);
     }
 
-    if (data.label === 'unknown') {
-      setShowAlarm(true);
-      try { alarmRef.current?.play(); } catch {}
-      toast.error('🚨 UNKNOWN PERSON DETECTED!', { autoClose: false });
-    } else if (data.label === 'swiggy') {
-      toast.info('🛵 Swiggy delivery agent at door', { autoClose: 4000 });
-    } else if (data.label === 'zomato') {
-      toast.info('🍕 Zomato delivery agent at door', { autoClose: 4000 });
-    } else if (data.label === 'postman_or_police') {
-      toast.info('👮 Postman / Police detected', { autoClose: 4000 });
-    } else if (data.label?.includes('family')) {
-      toast.success(`✅ ${getLabelText(data.label)} recognized`, { autoClose: 2000 });
-    }
-  }, [onDetectionResult]);
+    if (data.label?.toLowerCase().includes('unknown')) {
 
+  setShowAlarm(true);
+  // alarmRef.current?.play();  // enable if needed
+  // toast.error('🚨 UNKNOWN PERSON DETECTED!', { autoClose: false });
+
+} else if (data.label === 'swiggy') {
+
+  toast.info('🛵 Swiggy delivery agent at door', { autoClose: 4000 });
+
+} else if (data.label === 'zomato') {
+
+  toast.info('🍕 Zomato delivery agent at door', { autoClose: 4000 });
+
+} else if (data.label === 'postman_or_police') {
+
+  toast.info('👮 Postman / Police detected', { autoClose: 4000 });
+
+} else if (data.label?.includes('family')) {
+
+  toast.success(`✅ ${getLabelText(data.label)} recognized`, { autoClose: 2000 });
+
+} 
+}, [onDetectionResult]);
   const captureAndDetect = useCallback(async () => {
     if (!webcamRef.current) return;
     const screenshot = webcamRef.current.getScreenshot();
@@ -252,9 +263,11 @@ export default function Dashboard({ onDetectionResult }) {
   }, []);
 
   const dismissAlarm = useCallback(() => {
+    
     setShowAlarm(false);
     try { alarmRef.current?.pause(); alarmRef.current.currentTime = 0; } catch {}
   }, []);
+
 
   const handleRegister = useCallback((face) => {
     setRegisteredFaces(prev => [...prev, face]);
@@ -272,6 +285,23 @@ export default function Dashboard({ onDetectionResult }) {
     { id: 'log',      label: 'Activity Log',    icon: '📋' },
     { id: 'settings', label: 'Settings',        icon: '⚙️' },
   ];
+  const callMe = async () => {
+  console.log("CALLING BACKEND...");
+
+  try {
+    const res = await fetch(`${BACKEND}/call-alert`, {
+      method: "POST",
+    });
+
+    const data = await res.json();
+    console.log("CALL RESPONSE:", data);
+
+    toast.success("📞 Calling your phone...");
+  } catch (err) {
+    console.error("CALL FAILED:", err);
+    toast.error("❌ Call failed");
+  }
+};
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#0d1117', color: 'white', fontFamily: "'Segoe UI', Arial, sans-serif" }}>
@@ -511,18 +541,61 @@ export default function Dashboard({ onDetectionResult }) {
             <div style={{ fontSize: '56px', marginBottom: '8px' }}>🚨</div>
             <h2 style={{ color: '#ff3333', fontSize: '26px', margin: '0 0 8px 0' }}>INTRUDER ALERT!</h2>
             <p style={{ color: '#ffaaaa', fontSize: '14px', marginBottom: '24px' }}>Unknown person detected at entrance</p>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={dismissAlarm} style={{ flex: 1, padding: '12px', backgroundColor: '#21262d', color: 'white', border: '1px solid #30363d', borderRadius: '8px', cursor: 'pointer', fontSize: '14px' }}>
-                ✓ Dismiss
-              </button>
-              <button onClick={() => { dismissAlarm(); setActiveNav('live'); }} style={{ flex: 1, padding: '12px', backgroundColor: '#ff3333', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>
-                📷 See Camera
-              </button>
-            </div>
+            <div style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
+
+  <button
+    onClick={async () => {
+      await fetch(`${BACKEND}/call-police`, { method: "POST" });
+      dismissAlarm();
+    }}
+    style={{
+      padding: '12px',
+      backgroundColor: '#ff0000',
+      color: 'white',
+      border: 'none',
+      borderRadius: '8px',
+      fontWeight: 'bold'
+    }}
+  >
+    🚔 Call Police
+  </button>
+
+  <button
+    onClick={async () => {
+      await fetch(`${BACKEND}/call-family`, { method: "POST" });
+      dismissAlarm();
+    }}
+    style={{
+      padding: '12px',
+      backgroundColor: '#ff8800',
+      color: 'white',
+      border: 'none',
+      borderRadius: '8px',
+      fontWeight: 'bold'
+    }}
+  >
+    👨‍👩‍👧 Alert Family Members
+  </button>
+
+  <button
+    onClick={dismissAlarm}
+    style={{
+      padding: '12px',
+      backgroundColor: '#21262d',
+      color: 'white',
+      border: '1px solid #30363d',
+      borderRadius: '8px'
+    }}
+  >
+    ✓ Dismiss
+  </button>
+
+</div>
           </div>
         </div>
       )}
 
     </div>
-  );
-}
+  )
+ 
+  }

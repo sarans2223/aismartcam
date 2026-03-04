@@ -4,41 +4,35 @@ import os
 import tempfile
 import time
 from datetime import datetime
-from deepface import DeepFace
-from sms_alert import send_alert   # ? Twilio integration
+
+
+# Lazy DeepFace loader
+_deepface = None
+
+def get_deepface():
+    global _deepface
+    if _deepface is None:
+        try:
+            from deepface import DeepFace
+            _deepface = DeepFace
+        except Exception as e:
+            print(f"❌ DeepFace import failed: {e}")
+            _deepface = None
+    return _deepface
+
 
 KNOWN_FACES_DIR = "known_faces"
 BLACKLIST = ["swiggy", "zomato", "police", "postman"]
 
-# Alert cooldown settings
 last_alert_time = 0
 ALERT_COOLDOWN = 60  # seconds
 
-
-# -- Pre-load DeepFace model ------------------------------------------------
-print("? Loading DeepFace model... please wait")
-
-try:
-    dummy = np.zeros((100, 100, 3), dtype=np.uint8)
-    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-        tmp_path = tmp.name
-        cv2.imwrite(tmp_path, dummy)
-
-    try:
-        DeepFace.represent(tmp_path, model_name="VGG-Face", enforce_detection=False)
-    except:
-        pass
-
-    os.remove(tmp_path)
-    print("? DeepFace model loaded!")
-
-except Exception as e:
-    print(f"?? Model preload warning: {e}")
-
-
-# -- Known face embeddings cache --------------------------------------------
 known_embeddings = {}
 
+
+# ─────────────────────────────────────────────
+# Utility Functions
+# ─────────────────────────────────────────────
 
 def clean_name(filename):
     name = filename
@@ -46,53 +40,6 @@ def clean_name(filename):
         while name.lower().endswith(ext):
             name = name[:-len(ext)]
     return name.strip()
-
-
-def build_known_embeddings():
-    global known_embeddings
-    known_embeddings = {}
-
-    if not os.path.exists(KNOWN_FACES_DIR):
-        os.makedirs(KNOWN_FACES_DIR)
-        print("?? Created known_faces folder")
-        return
-
-    files = [f for f in os.listdir(KNOWN_FACES_DIR)
-             if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-
-    if not files:
-        print("?? No faces in known_faces folder!")
-        return
-
-    print(f"?? Building embeddings for {len(files)} file(s)...")
-
-    for face_file in files:
-        name = clean_name(face_file)
-
-        if name.lower() in BLACKLIST:
-            print(f"?? Skipping blacklisted: {face_file}")
-            continue
-
-        face_path = os.path.join(KNOWN_FACES_DIR, face_file)
-
-        try:
-            result = DeepFace.represent(
-                img_path=face_path,
-                model_name="VGG-Face",
-                enforce_detection=False
-            )
-
-            if result:
-                known_embeddings[name] = np.array(result[0]["embedding"])
-                print(f"? Loaded: {name}")
-
-        except Exception as e:
-            print(f"? Error loading {face_file}: {e}")
-
-    print("?? Recognition ready:", list(known_embeddings.keys()))
-
-
-build_known_embeddings()
 
 
 def cosine_similarity(a, b):
@@ -106,8 +53,101 @@ def cosine_similarity(a, b):
     return dot / (normA * normB)
 
 
+# ─────────────────────────────────────────────
+# Build Known Face Embeddings
+# ─────────────────────────────────────────────
+
+def build_known_embeddings():
+    global known_embeddings
+    known_embeddings = {}
+
+    if not os.path.exists(KNOWN_FACES_DIR):
+        os.makedirs(KNOWN_FACES_DIR)
+        print("📁 Created known_faces folder")
+        return
+
+    files = [f for f in os.listdir(KNOWN_FACES_DIR)
+             if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+
+    if not files:
+        print("⚠️ No faces in known_faces folder!")
+        return
+
+    print(f"👥 Building embeddings for {len(files)} file(s)...")
+
+    df = get_deepface()
+    if df is None:
+        print("❌ DeepFace unavailable")
+        return
+
+    for face_file in files:
+        name = clean_name(face_file)
+
+        if name.lower() in BLACKLIST:
+            continue
+
+        face_path = os.path.join(KNOWN_FACES_DIR, face_file)
+
+        try:
+            result = df.represent(
+                img_path=face_path,
+                model_name="VGG-Face",
+                enforce_detection=False
+            )
+
+            if result:
+                known_embeddings[name] = np.array(result[0]["embedding"])
+                print(f"✅ Loaded: {name}")
+
+        except Exception as e:
+            print(f"❌ Error loading {face_file}: {e}")
+
+    print("🎯 Ready:", list(known_embeddings.keys()))
+
+
+# Build embeddings at startup
+build_known_embeddings()
+
+
+# ─────────────────────────────────────────────
+# Uniform Detection
+# ─────────────────────────────────────────────
+
+def detect_uniform_color(image):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    total = image.shape[0] * image.shape[1]
+
+    orange = cv2.inRange(hsv, np.array([8,150,150]), np.array([20,255,255]))
+    red = (
+        cv2.inRange(hsv, np.array([0,150,150]), np.array([5,255,255])) +
+        cv2.inRange(hsv, np.array([175,150,150]), np.array([180,255,255]))
+    )
+    khaki = cv2.inRange(hsv, np.array([18,40,130]), np.array([28,90,190]))
+
+    op = (cv2.countNonZero(orange) / total) * 100
+    rp = (cv2.countNonZero(red) / total) * 100
+    kp = (cv2.countNonZero(khaki) / total) * 100
+
+    if op > 25:
+        return "swiggy", round(op, 2)
+    if rp > 25:
+        return "zomato", round(rp, 2)
+    if kp > 25:
+        return "postman_or_police", round(kp, 2)
+
+    return None, 0
+
+
+# ─────────────────────────────────────────────
+# Face Recognition
+# ─────────────────────────────────────────────
+
 def recognize_face(image):
     if not known_embeddings:
+        return "unknown", 0
+
+    df = get_deepface()
+    if df is None:
         return "unknown", 0
 
     tmp_path = None
@@ -117,7 +157,7 @@ def recognize_face(image):
             tmp_path = tmp.name
             cv2.imwrite(tmp_path, image)
 
-        result = DeepFace.represent(
+        result = df.represent(
             img_path=tmp_path,
             model_name="VGG-Face",
             enforce_detection=False
@@ -133,7 +173,6 @@ def recognize_face(image):
 
         for name, known_emb in known_embeddings.items():
             sim = cosine_similarity(incoming_emb, known_emb)
-
             if sim > best_similarity:
                 best_similarity = sim
                 best_name = name
@@ -144,10 +183,10 @@ def recognize_face(image):
             confidence = round(best_similarity * 100, 2)
             return f"family_{best_name}", confidence
         else:
-            return "unknown", 0
+            return "unknown", round(best_similarity * 100, 2)
 
     except Exception as e:
-        print(f"? Recognition error: {e}")
+        print(f"❌ Recognition error: {e}")
         return "unknown", 0
 
     finally:
@@ -155,29 +194,9 @@ def recognize_face(image):
             os.remove(tmp_path)
 
 
-def detect_uniform_color(image):
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    total = image.shape[0] * image.shape[1]
-
-    orange = cv2.inRange(hsv, np.array([8,150,150]), np.array([20,255,255]))
-    red = (cv2.inRange(hsv, np.array([0,150,150]), np.array([5,255,255])) +
-           cv2.inRange(hsv, np.array([175,150,150]), np.array([180,255,255])))
-    khaki = cv2.inRange(hsv, np.array([18,40,130]), np.array([28,90,190]))
-
-    op = (cv2.countNonZero(orange) / total) * 100
-    rp = (cv2.countNonZero(red) / total) * 100
-    kp = (cv2.countNonZero(khaki) / total) * 100
-
-    # return label, confidence, and raw percentages for logging
-    if op > 25:
-        return "swiggy", round(op, 2), {"orange": op, "red": rp, "khaki": kp}
-    if rp > 25:
-        return "zomato", round(rp, 2), {"orange": op, "red": rp, "khaki": kp}
-    if kp > 25:
-        return "postman_or_police", round(kp, 2), {"orange": op, "red": rp, "khaki": kp}
-
-    return None, 0, {"orange": op, "red": rp, "khaki": kp}
-
+# ─────────────────────────────────────────────
+# Main Detection Pipeline
+# ─────────────────────────────────────────────
 
 def analyze_frame(image):
     global last_alert_time
@@ -186,53 +205,16 @@ def analyze_frame(image):
     if w > 640:
         image = cv2.resize(image, (640, int(h * 640 / w)))
 
-    # 1️⃣ Check uniform
-    uniform_type, confidence, percents = detect_uniform_color(image)
-    print(f"🎨 Orange:{percents['orange']:.1f}% | Red:{percents['red']:.1f}% | Khaki:{percents['khaki']:.1f}%")
+    # 1️⃣ Uniform check
+    uniform_type, confidence = detect_uniform_color(image)
 
     if uniform_type:
-        print(f"🟨 Uniform detected: {uniform_type} ({confidence}%)")
         label = uniform_type
         alert = True
     else:
-        print("🔎 No uniform — checking face...")
-        # generate embedding for incoming frame
-        tmp_path = None
-        incoming_emb = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-                tmp_path = tmp.name
-                cv2.imwrite(tmp_path, image)
-            res = DeepFace.represent(img_path=tmp_path, model_name="VGG-Face", enforce_detection=False)
-            if res:
-                incoming_emb = np.array(res[0]["embedding"])
-        except Exception as e:
-            print(f"❌ Embedding error: {e}")
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)
-
-        best_name = None
-        best_sim = 0.0
-        THRESHOLD = 0.45
-        print("🔎 Face scores:")
-        if incoming_emb is not None and known_embeddings:
-            for name, emb in known_embeddings.items():
-                sim = cosine_similarity(incoming_emb, emb)
-                print(f"   {name}: {sim:.4f}")
-                if sim > best_sim:
-                    best_sim = sim
-                    best_name = name
-        if best_sim >= THRESHOLD:
-            confidence = round(best_sim * 100, 2)
-            label = f"family_{best_name}"
-            alert = False
-            print(f"✅ MATCH → {best_name} (score={best_sim:.4f}, {confidence}%)")
-        else:
-            confidence = round(best_sim * 100, 2)
-            label = "unknown"
-            alert = True
-            print(f"❌ UNKNOWN — best={best_name}:{best_sim:.4f} (need ≥0.45)")
+        identity, confidence = recognize_face(image)
+        label = identity
+        alert = not identity.startswith("family_")
 
     is_night = datetime.now().hour >= 23 or datetime.now().hour <= 5
 
@@ -244,14 +226,15 @@ def analyze_frame(image):
         "high_priority": alert and is_night
     }
 
-    # 2️⃣ Send SMS if needed
+    # 2️⃣ SMS Alert with cooldown
     if result["alert"]:
         current_time = time.time()
         if current_time - last_alert_time > ALERT_COOLDOWN:
             try:
+                from sms_alert import send_alert
                 send_alert(label, confidence)
             except Exception as e:
-                print(f"⚠️ Alert sending failed: {e}")
+                print(f"⚠️ SMS failed: {e}")
             last_alert_time = current_time
 
     print(f"👤 Result: {label} | alert={alert} | night={is_night}")
@@ -259,6 +242,5 @@ def analyze_frame(image):
 
 
 def reload_known_faces():
-    """Rebuild the known face embeddings cache and return the available names."""
     build_known_embeddings()
     return list(known_embeddings.keys())

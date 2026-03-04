@@ -1,41 +1,48 @@
-from datetime import datetime
 from twilio.rest import Client
 import os
 from dotenv import load_dotenv
 
-load_dotenv()  # Load .env file
+load_dotenv()
 
-account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-twilio_phone = os.getenv("TWILIO_PHONE_NUMBER")
-alert_phone = os.getenv("ALERT_PHONE_NUMBER")
+def send_alert(label, confidence):
 
-client = Client(account_sid, auth_token)
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_number = os.getenv("TWILIO_PHONE_NUMBER")
 
-def send_alert(label=None, confidence=None):
-    """Send an SMS alert via Twilio.
+    numbers = os.getenv("ALERT_TO_NUMBER")
 
-    Args:
-        label: Optional label or identity detected.
-        confidence: Optional confidence score as percentage.
-    """
-    # ensure credentials are available
-    if not account_sid or not auth_token or not twilio_phone or not alert_phone:
-        print("⚠️ Twilio credentials not configured; skipping SMS")
+    if not numbers:
+        print("❌ ALERT_TO_NUMBER not set in .env")
         return
 
-    body = "🚨 ALERT: Unknown person detected in Your Home!"
-    if label is not None:
-        body += f" Label={label}"
-    if confidence is not None:
-        body += f" ({confidence:.2f}%)"
+    number_list = [num.strip() for num in numbers.split(",") if num.strip()]
 
-    try:
-        message = client.messages.create(
-            body=body,
-            from_=twilio_phone,
-            to=alert_phone
-        )
-        print("SMS Sent:", message.sid)
-    except Exception as e:
-        print(f"⚠️ Twilio send failed: {e}")
+    message_body = f"""
+🚨 SENTINEL AI ALERT 🚨
+
+Detection: {label}
+Confidence: {confidence}%
+
+Unknown person detected at entrance.
+Time to check immediately.
+"""
+
+    client = Client(account_sid, auth_token)
+
+    for number in number_list:
+        try:
+            print(f"📩 Sending SMS to {number}")
+
+            message = client.messages.create(
+                body=message_body,
+                from_=from_number,
+                to=number
+            )
+
+            print(f"✅ SMS Sent | SID: {message.sid}")
+
+        except Exception as e:
+            print(f"❌ Failed to send SMS to {number} | Error: {e}")
+
+    return "SMS alerts sent"
