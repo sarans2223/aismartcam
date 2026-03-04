@@ -12,7 +12,7 @@ sentinel-ai/
 │   ├── firebase_config.py   # Firebase integration
 │   ├── requirements.txt     # Python dependencies
 │   ├── known_faces/         # Directory for reference face images
-│   └── models/              # YOLOv8 model weights
+│   └── models/              
 │
 ├── frontend/
 │   ├── src/
@@ -24,12 +24,12 @@ sentinel-ai/
 │   └── public/
 │
 └── training/
-    └── train.ipynb          # YOLOv8 training notebook for Colab
+    └── train.ipynb         
 ```
 
 ## Features
 
-- **Face Detection**: Real-time face detection using YOLOv8
+- **Face Detection**: Real-time face detection using DeepFace and OpenCV
 - **Face Recognition**: Identify faces against known person database (using DeepFace embeddings)
 - **Firebase Integration**: Cloud database for detection logs
 - **Web Interface**: React-based frontend for easy interaction
@@ -107,7 +107,7 @@ known_faces/
 
 ## Performance
 
-- Detection Model: YOLOv8 Nano (6.3 MB)
+- Detection Model: DeepFace OpenCV
 - Inference Speed: ~15-30ms per image (GPU)
 - Accuracy: Varies with training data
 
